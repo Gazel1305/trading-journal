@@ -103,7 +103,7 @@
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h4 class="mb-0"><i class="fas fa-list"></i> ประวัติการเทรด</h4>
                         <div class="text-end">
-                             <span class="badge bg-secondary p-2">กำไรสุทธิ: <span id="totalPnL">$0.00</span></span>
+                             <span class="badge bg-secondary p-2" style="font-size: 1.1em;">กำไรสุทธิ: <span id="totalPnL">Loading...</span></span>
                         </div>
                     </div>
                     
@@ -131,7 +131,6 @@
     <script>
         document.getElementById('date').valueAsDate = new Date();
         
-        // โหลด URL ที่เคยบันทึกไว้
         const savedUrl = localStorage.getItem('scriptUrl');
         if(savedUrl) {
             document.getElementById('scriptUrl').value = savedUrl;
@@ -142,7 +141,6 @@
             localStorage.setItem('scriptUrl', document.getElementById('scriptUrl').value);
         }
 
-        // ฟังก์ชันส่งข้อมูล (Save)
         document.getElementById('tradeForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const url = document.getElementById('scriptUrl').value;
@@ -153,7 +151,6 @@
             const size = parseFloat(document.getElementById('size').value);
             const side = document.getElementById('side').value;
             
-            // คำนวณ PnL
             let pnl = side === 'LONG' ? (exit - entry) * size : (entry - exit) * size;
 
             const data = {
@@ -170,7 +167,6 @@
 
             showLoading(true, "กำลังบันทึกลง Cloud...");
 
-            // ส่งข้อมูลแบบ Text Plain เพื่อเลี่ยง CORS Preflight
             fetch(url, {
                 method: 'POST',
                 body: JSON.stringify(data),
@@ -181,7 +177,7 @@
                 alert("✅ บันทึกสำเร็จ!");
                 document.getElementById('tradeForm').reset();
                 document.getElementById('date').valueAsDate = new Date();
-                loadDataFromCloud(); // โหลดข้อมูลใหม่มาแสดง
+                loadDataFromCloud();
             })
             .catch(error => {
                 alert("❌ เกิดข้อผิดพลาด: " + error);
@@ -189,7 +185,6 @@
             .finally(() => showLoading(false));
         });
 
-        // ฟังก์ชันดึงข้อมูล (Load)
         function loadDataFromCloud() {
             const url = document.getElementById('scriptUrl').value;
             if(!url) return;
@@ -204,20 +199,30 @@
                 
                 let totalPnL = 0;
 
-                // กลับลำดับข้อมูลให้ล่าสุดอยู่บน (Reverse)
                 data.reverse().forEach(row => {
                     const tr = document.createElement('tr');
-                    const pnlVal = parseFloat(row.PnL || row.pnl || 0);
+                    
+                    // --- จุดที่แก้ไข: ป้องกัน Error เวลาคำนวณ ---
+                    let rawPnL = row.PnL || row.pnl || row.PNL || 0;
+                    
+                    // แปลงเป็น String แล้วลบเครื่องหมายคอมม่า (,) ออกก่อนคำนวณ
+                    rawPnL = String(rawPnL).replace(/,/g, ''); 
+                    
+                    let pnlVal = parseFloat(rawPnL);
+                    
+                    // ถ้าแปลงแล้วไม่ใช่ตัวเลข ให้ตีเป็น 0 ไปเลย (กัน Error)
+                    if (isNaN(pnlVal)) pnlVal = 0;
+
                     totalPnL += pnlVal;
+                    // ----------------------------------------
                     
                     const pnlClass = pnlVal >= 0 ? 'status-win' : 'status-loss';
                     const sideColor = row.Side === 'LONG' ? 'text-success' : 'text-danger';
                     
-                    // เช็คว่าหัวข้อใน Sheet ตรงกับตัวแปรไหม (แก้ปัญหา Case Sensitive)
-                    const date = row.Date || row.date;
-                    const symbol = row.Symbol || row.symbol;
-                    const side = row.Side || row.side;
-                    const status = row.Status || row.status;
+                    const date = row.Date || row.date || "-";
+                    const symbol = row.Symbol || row.symbol || "-";
+                    const side = row.Side || row.side || "-";
+                    const status = row.Status || row.status || "-";
 
                     tr.innerHTML = `
                         <td>${date}</td>
@@ -229,13 +234,20 @@
                     tbody.appendChild(tr);
                 });
 
+                // แสดงผลยอดรวม
                 const totalEl = document.getElementById('totalPnL');
                 totalEl.innerText = '$' + totalPnL.toFixed(2);
-                totalEl.className = totalPnL >= 0 ? 'status-win' : 'status-loss';
+                
+                // เปลี่ยนสีปุ่มยอดรวม
+                if (totalPnL >= 0) {
+                    totalEl.parentElement.className = "badge bg-success p-2";
+                } else {
+                    totalEl.parentElement.className = "badge bg-danger p-2";
+                }
             })
             .catch(error => {
-                console.error(error);
-                // alert("ไม่สามารถดึงข้อมูลได้ (อาจยังไม่มีข้อมูลใน Sheet)");
+                console.error("Error:", error);
+                document.getElementById('totalPnL').innerText = "Error";
             })
             .finally(() => showLoading(false));
         }
